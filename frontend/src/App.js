@@ -802,7 +802,7 @@ function App() {
                       <TableHead>भूमिका</TableHead>
                       <TableHead>स्थिति</TableHead>
                       <TableHead>बनाने की तारीख</TableHead>
-                      {user.permissions?.includes('manage_permissions') && <TableHead>अनुमतियां</TableHead>}
+                      {user && user.permissions && user.permissions.includes('manage_permissions') && <TableHead>अनुमतियां</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
