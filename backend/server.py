@@ -82,6 +82,11 @@ class User(BaseModel):
     permissions: List[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=get_ist_now)
     is_active: bool = True
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class UserCreate(BaseModel):
     username: str
