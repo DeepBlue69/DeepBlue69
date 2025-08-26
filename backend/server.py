@@ -13,9 +13,13 @@ from datetime import datetime, timezone, timedelta, date
 import bcrypt
 import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+import pytz
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Timezone setup - Indian Standard Time
+IST = pytz.timezone('Asia/Kolkata')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -39,6 +43,33 @@ security = HTTPBearer()
 # Initialize LLM Chat for translation
 emergent_llm_key = os.environ.get('EMERGENT_LLM_KEY')
 
+# Define Permission constants
+PERMISSIONS = {
+    "create_challan": "Create Challans",
+    "view_all_challans": "View All Challans", 
+    "view_own_challans": "View Own Challans",
+    "delete_challan": "Delete Challans",
+    "modify_challan": "Modify Challans",
+    "view_reports": "View Reports",
+    "manage_users": "Manage Users",
+    "manage_permissions": "Manage Permissions"
+}
+
+# Default permissions for roles
+DEFAULT_PERMISSIONS = {
+    "admin": list(PERMISSIONS.keys()),
+    "supervisor": ["create_challan", "view_all_challans", "delete_challan", "modify_challan", "view_reports"],
+    "data_entry": ["create_challan", "view_own_challans"]
+}
+
+def get_ist_now():
+    """Get current time in IST"""
+    return datetime.now(IST)
+
+def get_ist_date():
+    """Get current date in IST"""
+    return get_ist_now().date()
+
 # Define Models
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -46,7 +77,8 @@ class User(BaseModel):
     email: str
     password_hash: str
     role: Literal["admin", "supervisor", "data_entry"]
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    permissions: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=get_ist_now)
     is_active: bool = True
 
 class UserCreate(BaseModel):
@@ -69,12 +101,17 @@ class ChallanItem(BaseModel):
     quantity: float
     unit: Literal["bags", "kgs"]
 
+class ChallanTotals(BaseModel):
+    total_bags: float = 0.0
+    total_kgs: float = 0.0
+
 class Challan(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    challan_number: int
+    challan_number: str
     items: List[ChallanItem]
+    totals: ChallanTotals
     created_by: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=get_ist_now)
     items_hindi: Optional[List[Dict]] = None
 
 class ChallanCreate(BaseModel):
@@ -88,6 +125,10 @@ class ReportQuery(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
 
+class UserPermissionUpdate(BaseModel):
+    user_id: str
+    permissions: List[str]
+
 # Utility functions
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -97,7 +138,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = get_ist_now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -121,12 +162,48 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     
     return User(**user)
 
+def check_permission(user: User, permission: str) -> bool:
+    """Check if user has specific permission"""
+    return permission in user.permissions
+
+def require_permission(permission: str):
+    """Decorator to require specific permission"""
+    def decorator(current_user: User = Depends(get_current_user)):
+        if not check_permission(current_user, permission):
+            raise HTTPException(status_code=403, detail=f"Permission '{permission}' required")
+        return current_user
+    return decorator
+
 async def get_next_challan_number():
-    # Get the highest challan number and increment by 1
-    last_challan = await db.challans.find_one(sort=[("challan_number", -1)])
+    """Get next challan number with YYYY/MM/DD-XXX format that resets daily"""
+    today = get_ist_date()
+    date_prefix = today.strftime("%Y/%m/%d")
+    
+    # Find the highest challan number for today
+    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=IST)
+    today_end = today_start + timedelta(days=1)
+    
+    last_challan = await db.challans.find_one(
+        {"created_at": {"$gte": today_start, "$lt": today_end}},
+        sort=[("created_at", -1)]
+    )
+    
     if last_challan:
-        return last_challan["challan_number"] + 1
-    return 1001  # Starting number
+        # Extract the sequence number from the last challan
+        last_number = last_challan["challan_number"]
+        sequence_part = last_number.split("-")[-1]
+        next_sequence = int(sequence_part) + 1
+    else:
+        next_sequence = 1
+    
+    # Format: YYYY/MM/DD-XXX (3 digit sequence)
+    return f"{date_prefix}-{next_sequence:03d}"
+
+def calculate_totals(items: List[ChallanItem]) -> ChallanTotals:
+    """Calculate total bags and kgs from items"""
+    total_bags = sum(item.quantity for item in items if item.unit == "bags")
+    total_kgs = sum(item.quantity for item in items if item.unit == "kgs")
+    return ChallanTotals(total_bags=total_bags, total_kgs=total_kgs)
 
 async def translate_to_hindi(text: str) -> str:
     try:
@@ -151,13 +228,16 @@ async def register(user_data: UserCreate):
     if existing_user:
         raise HTTPException(status_code=400, detail="Username or email already exists")
     
-    # Hash password and create user
+    # Hash password and create user with default permissions
     hashed_password = hash_password(user_data.password)
+    default_perms = DEFAULT_PERMISSIONS.get(user_data.role, [])
+    
     user = User(
         username=user_data.username,
         email=user_data.email,
         password_hash=hashed_password,
-        role=user_data.role
+        role=user_data.role,
+        permissions=default_perms
     )
     
     await db.users.insert_one(user.dict())
@@ -171,6 +251,15 @@ async def login(user_data: UserLogin):
     
     if not user["is_active"]:
         raise HTTPException(status_code=401, detail="Account is inactive")
+    
+    # Ensure user has permissions (for existing users)
+    if "permissions" not in user or not user["permissions"]:
+        default_perms = DEFAULT_PERMISSIONS.get(user["role"], [])
+        await db.users.update_one(
+            {"username": user["username"]},
+            {"$set": {"permissions": default_perms}}
+        )
+        user["permissions"] = default_perms
     
     access_token = create_access_token({"sub": user["username"]})
     # Convert ObjectId to string and remove MongoDB _id field
@@ -197,11 +286,11 @@ async def translate_text(request: TranslationRequest, current_user: User = Depen
     return {"english": request.text, "hindi": hindi_text}
 
 @api_router.post("/challans", response_model=Challan)
-async def create_challan(challan_data: ChallanCreate, current_user: User = Depends(get_current_user)):
-    if current_user.role not in ["admin", "supervisor", "data_entry"]:
-        raise HTTPException(status_code=403, detail="Not authorized to create challans")
-    
+async def create_challan(challan_data: ChallanCreate, current_user: User = Depends(require_permission("create_challan"))):
     challan_number = await get_next_challan_number()
+    
+    # Calculate totals
+    totals = calculate_totals(challan_data.items)
     
     # Translate items to Hindi
     items_hindi = []
@@ -214,24 +303,39 @@ async def create_challan(challan_data: ChallanCreate, current_user: User = Depen
             "unit": hindi_unit
         })
     
+    # Add totals to Hindi items
+    hindi_totals = {
+        "total_bags": totals.total_bags,
+        "total_kgs": totals.total_kgs,
+        "total_bags_hindi": await translate_to_hindi("Total Bags"),
+        "total_kgs_hindi": await translate_to_hindi("Total Kgs")
+    }
+    
     challan = Challan(
         challan_number=challan_number,
         items=challan_data.items,
+        totals=totals,
         items_hindi=items_hindi,
         created_by=current_user.username
     )
     
-    await db.challans.insert_one(challan.dict())
+    # Store Hindi totals in the challan document
+    challan_dict = challan.dict()
+    challan_dict["hindi_totals"] = hindi_totals
+    
+    await db.challans.insert_one(challan_dict)
     return challan
 
 @api_router.get("/challans", response_model=List[Challan])
 async def get_challans(current_user: User = Depends(get_current_user)):
-    if current_user.role == "data_entry":
-        # Data entry users can only see their own challans
+    if check_permission(current_user, "view_all_challans"):
+        # User can see all challans
+        challans = await db.challans.find().sort("created_at", -1).to_list(100)
+    elif check_permission(current_user, "view_own_challans"):
+        # User can only see their own challans
         challans = await db.challans.find({"created_by": current_user.username}).sort("created_at", -1).to_list(100)
     else:
-        # Admin and supervisor can see all challans
-        challans = await db.challans.find().sort("created_at", -1).to_list(100)
+        raise HTTPException(status_code=403, detail="No permission to view challans")
     
     return [Challan(**challan) for challan in challans]
 
@@ -242,16 +346,16 @@ async def get_challan(challan_id: str, current_user: User = Depends(get_current_
         raise HTTPException(status_code=404, detail="Challan not found")
     
     # Check permissions
-    if current_user.role == "data_entry" and challan["created_by"] != current_user.username:
+    can_view_all = check_permission(current_user, "view_all_challans")
+    can_view_own = check_permission(current_user, "view_own_challans")
+    
+    if not can_view_all and (not can_view_own or challan["created_by"] != current_user.username):
         raise HTTPException(status_code=403, detail="Not authorized to view this challan")
     
     return Challan(**challan)
 
 @api_router.delete("/challans/{challan_id}")
-async def delete_challan(challan_id: str, current_user: User = Depends(get_current_user)):
-    if current_user.role not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="Not authorized to delete challans")
-    
+async def delete_challan(challan_id: str, current_user: User = Depends(require_permission("delete_challan"))):
     result = await db.challans.delete_one({"id": challan_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Challan not found")
@@ -259,12 +363,9 @@ async def delete_challan(challan_id: str, current_user: User = Depends(get_curre
     return {"message": "Challan deleted successfully"}
 
 @api_router.post("/reports")
-async def get_reports(report_query: ReportQuery, current_user: User = Depends(get_current_user)):
-    if current_user.role not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="Not authorized to view reports")
-    
-    # Calculate date range based on report type
-    now = datetime.now(timezone.utc)
+async def get_reports(report_query: ReportQuery, current_user: User = Depends(require_permission("view_reports"))):
+    # Calculate date range based on report type (all in IST)
+    now = get_ist_now()
     
     if report_query.report_type == "daily":
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -283,8 +384,8 @@ async def get_reports(report_query: ReportQuery, current_user: User = Depends(ge
     elif report_query.report_type == "custom":
         if not report_query.start_date or not report_query.end_date:
             raise HTTPException(status_code=400, detail="Start and end dates required for custom reports")
-        start_date = datetime.combine(report_query.start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-        end_date = datetime.combine(report_query.end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        start_date = datetime.combine(report_query.start_date, datetime.min.time()).replace(tzinfo=IST)
+        end_date = datetime.combine(report_query.end_date, datetime.max.time()).replace(tzinfo=IST)
     
     # Query challans in date range
     challans = await db.challans.find({
@@ -294,6 +395,8 @@ async def get_reports(report_query: ReportQuery, current_user: User = Depends(ge
     # Aggregate data
     item_totals = {}
     total_challans = len(challans)
+    total_bags_all = 0.0
+    total_kgs_all = 0.0
     
     for challan in challans:
         for item in challan["items"]:
@@ -301,21 +404,25 @@ async def get_reports(report_query: ReportQuery, current_user: User = Depends(ge
             if item_key not in item_totals:
                 item_totals[item_key] = 0
             item_totals[item_key] += item["quantity"]
+        
+        # Add to overall totals
+        if "totals" in challan:
+            total_bags_all += challan["totals"].get("total_bags", 0)
+            total_kgs_all += challan["totals"].get("total_kgs", 0)
     
     return {
         "report_type": report_query.report_type,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "total_challans": total_challans,
+        "total_bags_all": total_bags_all,
+        "total_kgs_all": total_kgs_all,
         "item_totals": item_totals,
         "challans": [Challan(**challan) for challan in challans]
     }
 
 @api_router.get("/users", response_model=List[dict])
-async def get_users(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admin can view users")
-    
+async def get_users(current_user: User = Depends(require_permission("manage_users"))):
     users = await db.users.find().to_list(1000)
     # Clean up ObjectId fields for each user
     clean_users = []
@@ -326,6 +433,29 @@ async def get_users(current_user: User = Depends(get_current_user)):
         clean_users.append(clean_user)
     return clean_users
 
+@api_router.get("/permissions")
+async def get_available_permissions(current_user: User = Depends(require_permission("manage_permissions"))):
+    return {"permissions": PERMISSIONS}
+
+@api_router.put("/users/{user_id}/permissions")
+async def update_user_permissions(user_id: str, permission_update: UserPermissionUpdate, current_user: User = Depends(require_permission("manage_permissions"))):
+    # Validate permissions
+    valid_permissions = set(PERMISSIONS.keys())
+    invalid_permissions = set(permission_update.permissions) - valid_permissions
+    if invalid_permissions:
+        raise HTTPException(status_code=400, detail=f"Invalid permissions: {list(invalid_permissions)}")
+    
+    # Update user permissions
+    result = await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"permissions": permission_update.permissions}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"message": "User permissions updated successfully"}
+
 # Initialize admin user on startup
 @app.on_event("startup")
 async def create_admin_user():
@@ -335,7 +465,8 @@ async def create_admin_user():
             username="admin",
             email="admin@challan.com",
             password_hash=hash_password("admin123"),
-            role="admin"
+            role="admin",
+            permissions=DEFAULT_PERMISSIONS["admin"]
         )
         await db.users.insert_one(admin_user.dict())
         print("Admin user created: username=admin, password=admin123")
