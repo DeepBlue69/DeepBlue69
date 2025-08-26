@@ -445,6 +445,21 @@ function App() {
     );
   }
 
+  // Loading state while user data is being fetched
+  if (userLoading || !user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-pink-50 flex items-center justify-center">
+        <Card className="w-full max-w-md shadow-2xl border-0 bg-white/90 backdrop-blur-sm">
+          <CardContent className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+            <p className="text-orange-800">लोड हो रहा है...</p>
+          </CardContent>
+        </Card>
+        <Toaster />
+      </div>
+    );
+  }
+
   const tabsToShow = [
     { key: 'challans', label: 'चालान', icon: FileText, permission: ['view_all_challans', 'view_own_challans'] },
     { key: 'create', label: 'नया चालान', icon: Plus, permission: ['create_challan'] },
