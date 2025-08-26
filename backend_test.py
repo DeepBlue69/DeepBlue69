@@ -118,7 +118,7 @@ class ChallanAPITester:
         return success
 
     def test_create_challan(self):
-        """Test creating a new challan"""
+        """Test creating a new challan with enhanced features"""
         challan_data = {
             "items": [
                 {"name": "Rice", "quantity": 50.0, "unit": "bags"},
@@ -136,9 +136,39 @@ class ChallanAPITester:
         
         if success and 'id' in response:
             self.created_challan_id = response['id']
-            print(f"   Created challan #{response.get('challan_number')} with ID: {self.created_challan_id}")
+            challan_number = response.get('challan_number', '')
+            print(f"   Created challan #{challan_number} with ID: {self.created_challan_id}")
+            
+            # Test new challan numbering format (YYYY/MM/DD-XXX)
+            import re
+            if re.match(r'\d{4}/\d{2}/\d{2}-\d{3}', challan_number):
+                print(f"   ✅ Challan number format correct: {challan_number}")
+            else:
+                print(f"   ❌ Challan number format incorrect: {challan_number} (expected YYYY/MM/DD-XXX)")
+            
+            # Test totals calculation
+            if 'totals' in response:
+                totals = response['totals']
+                expected_bags = 50.0
+                expected_kgs = 25.5
+                if totals.get('total_bags') == expected_bags and totals.get('total_kgs') == expected_kgs:
+                    print(f"   ✅ Totals calculated correctly: {totals}")
+                else:
+                    print(f"   ❌ Totals calculation error: {totals} (expected bags: {expected_bags}, kgs: {expected_kgs})")
+            
+            # Test IST timestamp
+            if 'created_at' in response:
+                created_at = response['created_at']
+                print(f"   📅 Created at (IST): {created_at}")
+                # Check if timestamp contains timezone info
+                if '+05:30' in created_at or 'Asia/Kolkata' in created_at:
+                    print(f"   ✅ IST timezone detected in timestamp")
+                else:
+                    print(f"   ⚠️  Timezone info not clearly visible in timestamp")
+            
             if 'items_hindi' in response:
-                print(f"   Hindi translations: {response['items_hindi']}")
+                print(f"   🔤 Hindi translations: {response['items_hindi']}")
+                
         return success
 
     def test_get_challans(self):
