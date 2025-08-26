@@ -1047,7 +1047,7 @@ function App() {
                             {userData.is_active ? "सक्रिय" : "निष्क्रिय"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{formatDateTimeLocal(userData.created_at)}</TableCell>
+                        <TableCell>{formatDateTimeIST(userData.created_at)}</TableCell>
                         {user && user.permissions && user.permissions.includes('manage_permissions') && (
                           <TableCell>
                             <Button
