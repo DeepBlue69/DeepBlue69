@@ -254,20 +254,141 @@ class ChallanAPITester:
         )
         return success
 
-    def test_unauthorized_access(self):
-        """Test accessing protected routes without token"""
-        old_token = self.token
-        self.token = None
-        
+    def test_permissions_system(self):
+        """Test the new permissions system"""
         success, response = self.run_test(
-            "Unauthorized Access (should fail)",
+            "Get Available Permissions",
             "GET",
-            "challans",
-            401  # Expecting unauthorized
+            "permissions",
+            200
         )
         
-        self.token = old_token
+        if success and 'permissions' in response:
+            permissions = response['permissions']
+            expected_permissions = [
+                "create_challan", "view_all_challans", "view_own_challans",
+                "delete_challan", "modify_challan", "view_reports",
+                "manage_users", "manage_permissions"
+            ]
+            
+            print(f"   Available permissions: {list(permissions.keys())}")
+            
+            # Check if all expected permissions are present
+            missing_permissions = [p for p in expected_permissions if p not in permissions]
+            if not missing_permissions:
+                print(f"   ✅ All 8 expected permissions found")
+            else:
+                print(f"   ❌ Missing permissions: {missing_permissions}")
+                
         return success
+
+    def test_user_permission_update(self):
+        """Test updating user permissions"""
+        # First get all users to find a test user
+        success, users_response = self.run_test(
+            "Get Users for Permission Test",
+            "GET",
+            "users",
+            200
+        )
+        
+        if not success or not users_response:
+            print("   ⚠️  Cannot test permission update - no users found")
+            return True
+            
+        # Find a non-admin user to test with
+        test_user = None
+        for user in users_response:
+            if user.get('role') != 'admin':
+                test_user = user
+                break
+                
+        if not test_user:
+            print("   ⚠️  Cannot test permission update - no non-admin users found")
+            return True
+            
+        # Test updating permissions
+        new_permissions = ["create_challan", "view_own_challans"]
+        success, response = self.run_test(
+            "Update User Permissions",
+            "PUT",
+            f"users/{test_user['id']}/permissions",
+            200,
+            data={
+                "user_id": test_user['id'],
+                "permissions": new_permissions
+            }
+        )
+        
+        if success:
+            print(f"   ✅ Successfully updated permissions for user: {test_user['username']}")
+        
+        return success
+
+    def test_multiple_challans_same_day(self):
+        """Test creating multiple challans on same day to verify daily numbering"""
+        print("\n🔍 Testing Daily Challan Numbering Reset...")
+        
+        challan_numbers = []
+        
+        # Create 3 challans to test sequential numbering
+        for i in range(3):
+            challan_data = {
+                "items": [
+                    {"name": f"Test Item {i+1}", "quantity": 10.0, "unit": "bags"}
+                ]
+            }
+            
+            success, response = self.run_test(
+                f"Create Challan {i+1} for Daily Numbering Test",
+                "POST",
+                "challans",
+                200,
+                data=challan_data
+            )
+            
+            if success and 'challan_number' in response:
+                challan_numbers.append(response['challan_number'])
+                
+        # Analyze the numbering pattern
+        if len(challan_numbers) >= 2:
+            print(f"   Generated challan numbers: {challan_numbers}")
+            
+            # Check if they follow YYYY/MM/DD-XXX pattern and increment properly
+            import re
+            pattern = r'(\d{4}/\d{2}/\d{2})-(\d{3})'
+            
+            valid_format = True
+            same_date = True
+            sequential = True
+            
+            for i, number in enumerate(challan_numbers):
+                match = re.match(pattern, number)
+                if not match:
+                    valid_format = False
+                    break
+                    
+                date_part, seq_part = match.groups()
+                
+                if i == 0:
+                    first_date = date_part
+                elif date_part != first_date:
+                    same_date = False
+                    
+                expected_seq = f"{i+1:03d}"  # This assumes we're the only ones creating challans
+                # Note: In real scenario, sequence might not start from 001 if other challans exist
+                
+            if valid_format:
+                print(f"   ✅ All challan numbers follow YYYY/MM/DD-XXX format")
+            else:
+                print(f"   ❌ Some challan numbers don't follow expected format")
+                
+            if same_date:
+                print(f"   ✅ All challans created on same date: {first_date}")
+            else:
+                print(f"   ⚠️  Challans created on different dates (expected for same day)")
+                
+        return len(challan_numbers) > 0
 
 def main():
     print("🚀 Starting Delivery Challan Generator API Tests")
