@@ -439,7 +439,12 @@ function App() {
     { key: 'reports', label: 'रिपोर्ट', icon: BarChart3, permission: ['view_reports'] },
     { key: 'users', label: 'उपयोगकर्ता', icon: Users, permission: ['manage_users'] },
     { key: 'permissions', label: 'अनुमतियां', icon: Shield, permission: ['manage_permissions'] }
-  ].filter(tab => tab.permission.some(perm => user?.permissions?.includes(perm)));
+  ].filter(tab => {
+    if (!user || !user.permissions || !Array.isArray(user.permissions)) {
+      return false;
+    }
+    return tab.permission.some(perm => user.permissions.includes(perm));
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-pink-50">
