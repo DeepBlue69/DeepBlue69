@@ -183,6 +183,7 @@ async def login(user_data: UserLogin):
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     user_dict = current_user.dict()
     user_dict.pop("password_hash", None)
+    user_dict.pop("_id", None)  # Remove MongoDB _id if present
     return user_dict
 
 @api_router.post("/translate", response_model=dict)
