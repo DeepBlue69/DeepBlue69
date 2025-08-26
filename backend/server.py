@@ -431,6 +431,13 @@ async def get_reports(report_query: ReportQuery, current_user: User = Depends(re
             total_bags_all += challan["totals"].get("total_bags", 0)
             total_kgs_all += challan["totals"].get("total_kgs", 0)
     
+    # Handle backward compatibility for challans without vehicle_no
+    processed_challans = []
+    for challan in challans:
+        if "vehicle_no" not in challan:
+            challan["vehicle_no"] = None
+        processed_challans.append(Challan(**challan))
+    
     return {
         "report_type": report_query.report_type,
         "start_date": start_date.isoformat(),
@@ -439,7 +446,7 @@ async def get_reports(report_query: ReportQuery, current_user: User = Depends(re
         "total_bags_all": total_bags_all,
         "total_kgs_all": total_kgs_all,
         "item_totals": item_totals,
-        "challans": [Challan(**challan) for challan in challans]
+        "challans": processed_challans
     }
 
 @api_router.get("/users", response_model=List[dict])
