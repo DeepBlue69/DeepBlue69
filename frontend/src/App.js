@@ -24,6 +24,7 @@ const API = `${BACKEND_URL}/api`;
 
 function App() {
   const [user, setUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '', role: 'data_entry' });
