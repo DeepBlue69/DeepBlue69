@@ -652,7 +652,7 @@ function App() {
                                 चालान #{challan.challan_number}
                               </Badge>
                               <span className="text-sm text-gray-600">
-                                {formatDateTimeLocal(challan.created_at)}
+                                {formatDateTimeIST(challan.created_at)}
                               </span>
                             </div>
                             <div>
