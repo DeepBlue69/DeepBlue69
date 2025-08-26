@@ -356,17 +356,27 @@ function App() {
       } else if (fieldType === 'item_name') {
         updateItem(index, 'name', transcript);
       } else if (fieldType === 'quantity') {
-        // Extract numbers from transcript
-        const numberMatch = transcript.match(/\d+(\.\d+)?/);
-        if (numberMatch) {
-          updateItem(index, 'quantity', numberMatch[0]);
+        // Enhanced parsing for quantity and unit
+        const parsed = parseVoiceInput(transcript, 'quantity');
+        
+        if (parsed.quantity) {
+          updateItem(index, 'quantity', parsed.quantity);
+        }
+        
+        if (parsed.unit) {
+          updateItem(index, 'unit', parsed.unit);
+          toast.success(`वॉयस इनपुट: ${transcript} → मात्रा: ${parsed.quantity} ${parsed.unit}`);
         } else {
-          updateItem(index, 'quantity', transcript);
+          toast.success(`वॉयस इनपुट: ${transcript} → मात्रा: ${parsed.quantity}`);
         }
       }
       
       setIsListening({ ...isListening, [fieldKey]: false });
-      toast.success(`वॉयस इनपुट: ${transcript}`);
+      
+      // Don't show duplicate toast for quantity field as we handle it above
+      if (fieldType !== 'quantity') {
+        toast.success(`वॉयस इनपुट: ${transcript}`);
+      }
     };
 
     speechRecognition.onerror = (event) => {
