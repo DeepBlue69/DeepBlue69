@@ -247,7 +247,17 @@ function App() {
 
   const formatDateTimeIST = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleString('hi-IN', {
+    // Create IST date by adding 5 hours 30 minutes to UTC if timezone is not already included
+    let istDate;
+    if (dateString.includes('+') || dateString.includes('Z')) {
+      // Timezone info already present, just use it
+      istDate = date;
+    } else {
+      // No timezone info, assume UTC and convert to IST
+      istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+    }
+    
+    return istDate.toLocaleString('hi-IN', {
       timeZone: 'Asia/Kolkata',
       year: 'numeric',
       month: '2-digit',
