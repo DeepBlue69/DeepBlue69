@@ -88,8 +88,15 @@ function App() {
     try {
       const response = await axios.post(`${API}/auth/login`, loginData);
       const { access_token, user: userData } = response.data;
+      
+      // Ensure permissions is always an array
+      if (!userData.permissions) {
+        userData.permissions = [];
+      }
+      
       setToken(access_token);
       setUser(userData);
+      setUserLoading(false);
       localStorage.setItem('token', access_token);
       toast.success('लॉगिन सफल!');
       setLoginData({ username: '', password: '' });
