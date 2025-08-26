@@ -267,19 +267,17 @@ function App() {
 
   const formatDateTimeIST = (dateString) => {
     try {
-      // Parse the datetime which should now be in IST from backend
+      // The backend is already sending IST timestamps with +05:30 offset
+      // Parse directly without any timezone conversion
       const date = new Date(dateString);
       
-      // Create IST time manually (UTC+5:30)
-      const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
-      const istTime = new Date(utcTime + (5.5 * 60 * 60 * 1000));
+      // Extract components directly from the parsed date (which should already be IST)
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
       
-      const day = istTime.getDate().toString().padStart(2, '0');
-      const month = (istTime.getMonth() + 1).toString().padStart(2, '0');
-      const year = istTime.getFullYear();
-      
-      let hours = istTime.getHours();
-      const minutes = istTime.getMinutes().toString().padStart(2, '0');
+      let hours = date.getHours();
+      const minutes = date.getMinutes().toString().padStart(2, '0');
       const ampm = hours >= 12 ? 'pm' : 'am';
       hours = hours % 12;
       hours = hours ? hours : 12; // 0 should be 12
