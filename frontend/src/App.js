@@ -267,22 +267,26 @@ function App() {
 
   const formatDateTimeIST = (dateString) => {
     try {
-      // The backend is already sending IST timestamps with +05:30 offset
-      // Parse directly without any timezone conversion
-      const date = new Date(dateString);
+      // Parse the IST timestamp directly from the backend
+      // Backend sends: "2025-08-26T16:24:06.019586+05:30"
       
-      // Extract components directly from the parsed date (which should already be IST)
-      const day = date.getDate().toString().padStart(2, '0');
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const year = date.getFullYear();
+      // Extract date and time parts manually to avoid browser timezone issues
+      const match = dateString.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+      if (!match) {
+        // Fallback to original parsing if regex fails
+        const date = new Date(dateString);
+        return date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      }
       
-      let hours = date.getHours();
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      const ampm = hours >= 12 ? 'pm' : 'am';
-      hours = hours % 12;
-      hours = hours ? hours : 12; // 0 should be 12
+      const [, year, month, day, hour, minute] = match;
       
-      return `${day}/${month}/${year}, ${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+      // Convert to 12-hour format
+      let displayHour = parseInt(hour);
+      const ampm = displayHour >= 12 ? 'pm' : 'am';
+      displayHour = displayHour % 12;
+      displayHour = displayHour ? displayHour : 12; // 0 should be 12
+      
+      return `${day}/${month}/${year}, ${displayHour.toString().padStart(2, '0')}:${minute} ${ampm}`;
     } catch (error) {
       console.error('Date formatting error:', error);
       return dateString;
