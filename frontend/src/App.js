@@ -821,7 +821,7 @@ function App() {
                           </Badge>
                         </TableCell>
                         <TableCell>{formatDateTimeIST(userData.created_at)}</TableCell>
-                        {user.permissions?.includes('manage_permissions') && (
+                        {user && user.permissions && user.permissions.includes('manage_permissions') && (
                           <TableCell>
                             <Button
                               size="sm"
