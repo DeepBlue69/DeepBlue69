@@ -15,7 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
 import { Label } from './components/ui/label';
 import { Separator } from './components/ui/separator';
-import { CalendarIcon, Plus, Trash2, FileText, Users, BarChart3, LogOut, Eye, Printer } from 'lucide-react';
+import { Checkbox } from './components/ui/checkbox';
+import { CalendarIcon, Plus, Trash2, FileText, Users, BarChart3, LogOut, Eye, Printer, Settings, Shield } from 'lucide-react';
 import { format } from 'date-fns';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -31,9 +32,13 @@ function App() {
   const [reports, setReports] = useState(null);
   const [reportQuery, setReportQuery] = useState({ report_type: 'daily', start_date: null, end_date: null });
   const [users, setUsers] = useState([]);
+  const [permissions, setPermissions] = useState({});
   const [selectedChallan, setSelectedChallan] = useState(null);
   const [activeTab, setActiveTab] = useState('challans');
   const [showRegister, setShowRegister] = useState(false);
+  const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userPermissions, setUserPermissions] = useState([]);
 
   useEffect(() => {
     if (token) {
@@ -44,8 +49,11 @@ function App() {
   useEffect(() => {
     if (user) {
       fetchChallans();
-      if (user.role === 'admin') {
+      if (user.permissions?.includes('manage_users')) {
         fetchUsers();
+      }
+      if (user.permissions?.includes('manage_permissions')) {
+        fetchAvailablePermissions();
       }
     }
   }, [user]);
@@ -123,6 +131,17 @@ function App() {
     }
   };
 
+  const fetchAvailablePermissions = async () => {
+    try {
+      const response = await axios.get(`${API}/permissions`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPermissions(response.data.permissions);
+    } catch (error) {
+      toast.error('अनुमतियां लाने में त्रुटि');
+    }
+  };
+
   const createChallan = async (e) => {
     e.preventDefault();
     try {
@@ -169,6 +188,26 @@ function App() {
     }
   };
 
+  const updateUserPermissions = async () => {
+    try {
+      await axios.put(`${API}/users/${selectedUser.id}/permissions`, 
+        { user_id: selectedUser.id, permissions: userPermissions },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('उपयोगकर्ता अनुमतियां अपडेट की गईं!');
+      setPermissionDialogOpen(false);
+      fetchUsers();
+    } catch (error) {
+      toast.error('अनुमतियां अपडेट करने में त्रुटि');
+    }
+  };
+
+  const openPermissionDialog = (user) => {
+    setSelectedUser(user);
+    setUserPermissions(user.permissions || []);
+    setPermissionDialogOpen(true);
+  };
+
   const addItem = () => {
     setNewChallan({
       ...newChallan,
@@ -187,10 +226,22 @@ function App() {
     setNewChallan({ ...newChallan, items });
   };
 
+  const formatDateTimeIST = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('hi-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
   const printChallan = (challan) => {
     const printWindow = window.open('', '_blank');
-    const challanDate = new Date(challan.created_at).toLocaleDateString('hi-IN');
-    const challanTime = new Date(challan.created_at).toLocaleTimeString('hi-IN');
+    const challanDateTime = formatDateTimeIST(challan.created_at);
     
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -202,9 +253,12 @@ function App() {
             body { font-family: 'Noto Sans Devanagari', Arial, sans-serif; font-size: 14px; }
             .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
             .challan-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
-            .items-table { width: 100%; border-collapse: collapse; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
             .items-table th, .items-table td { border: 1px solid #000; padding: 8px; text-align: left; }
             .items-table th { background-color: #f0f0f0; font-weight: bold; }
+            .totals-section { background-color: #f9f9f9; padding: 10px; border: 2px solid #000; margin-bottom: 20px; }
+            .totals-table { width: 100%; }
+            .totals-table td { padding: 5px 10px; font-weight: bold; }
             .footer { margin-top: 30px; display: flex; justify-content: space-between; }
             .signature-box { border-top: 1px solid #000; padding-top: 5px; width: 200px; text-align: center; }
           </style>
@@ -218,8 +272,7 @@ function App() {
           <div class="challan-info">
             <div>
               <strong>चालान संख्या / Challan No:</strong> ${challan.challan_number}<br>
-              <strong>दिनांक / Date:</strong> ${challanDate}<br>
-              <strong>समय / Time:</strong> ${challanTime}
+              <strong>दिनांक व समय / Date & Time:</strong> ${challanDateTime}
             </div>
             <div>
               <strong>द्वारा बनाया गया / Created By:</strong> ${challan.created_by}
@@ -246,6 +299,18 @@ function App() {
               `).join('') || ''}
             </tbody>
           </table>
+          
+          <div class="totals-section">
+            <h3 style="margin: 0 0 10px 0; text-align: center;">कुल मात्रा / Total Quantities</h3>
+            <table class="totals-table">
+              <tr>
+                <td>कुल बैग / Total Bags:</td>
+                <td>${challan.totals?.total_bags || 0}</td>
+                <td>कुल किलोग्राम / Total Kgs:</td>
+                <td>${challan.totals?.total_kgs || 0}</td>
+              </tr>
+            </table>
+          </div>
           
           <div class="footer">
             <div class="signature-box">
@@ -368,6 +433,14 @@ function App() {
     );
   }
 
+  const tabsToShow = [
+    { key: 'challans', label: 'चालान', icon: FileText, permission: ['view_all_challans', 'view_own_challans'] },
+    { key: 'create', label: 'नया चालान', icon: Plus, permission: ['create_challan'] },
+    { key: 'reports', label: 'रिपोर्ट', icon: BarChart3, permission: ['view_reports'] },
+    { key: 'users', label: 'उपयोगकर्ता', icon: Users, permission: ['manage_users'] },
+    { key: 'permissions', label: 'अनुमतियां', icon: Shield, permission: ['manage_permissions'] }
+  ].filter(tab => tab.permission.some(perm => user?.permissions?.includes(perm)));
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-pink-50">
       <div className="container mx-auto p-4">
@@ -385,27 +458,13 @@ function App() {
 
         {/* Main Content */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-white/90 backdrop-blur-sm border border-orange-200">
-            <TabsTrigger value="challans" className="data-[state=active]:bg-orange-100">
-              <FileText className="w-4 h-4 mr-2" />
-              चालान
-            </TabsTrigger>
-            <TabsTrigger value="create" className="data-[state=active]:bg-orange-100">
-              <Plus className="w-4 h-4 mr-2" />
-              नया चालान
-            </TabsTrigger>
-            {(user?.role === 'admin' || user?.role === 'supervisor') && (
-              <TabsTrigger value="reports" className="data-[state=active]:bg-orange-100">
-                <BarChart3 className="w-4 h-4 mr-2" />
-                रिपोर्ट
+          <TabsList className="grid w-full bg-white/90 backdrop-blur-sm border border-orange-200" style={{gridTemplateColumns: `repeat(${tabsToShow.length}, 1fr)`}}>
+            {tabsToShow.map(tab => (
+              <TabsTrigger key={tab.key} value={tab.key} className="data-[state=active]:bg-orange-100">
+                <tab.icon className="w-4 h-4 mr-2" />
+                {tab.label}
               </TabsTrigger>
-            )}
-            {user?.role === 'admin' && (
-              <TabsTrigger value="users" className="data-[state=active]:bg-orange-100">
-                <Users className="w-4 h-4 mr-2" />
-                उपयोगकर्ता
-              </TabsTrigger>
-            )}
+            ))}
           </TabsList>
 
           {/* Challans Tab */}
@@ -426,7 +485,7 @@ function App() {
                                 चालान #{challan.challan_number}
                               </Badge>
                               <span className="text-sm text-gray-600">
-                                {new Date(challan.created_at).toLocaleDateString('hi-IN')}
+                                {formatDateTimeIST(challan.created_at)}
                               </span>
                             </div>
                             <div>
@@ -438,6 +497,9 @@ function App() {
                                     {index < challan.items.length - 1 && ', '}
                                   </span>
                                 ))}
+                              </div>
+                              <div className="text-sm font-medium text-orange-700 mt-2">
+                                कुल: {challan.totals?.total_bags || 0} बैग, {challan.totals?.total_kgs || 0} किग्रा
                               </div>
                             </div>
                           </div>
@@ -461,8 +523,7 @@ function App() {
                                   <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4 text-sm">
                                       <div>
-                                        <p><strong>दिनांक:</strong> {new Date(selectedChallan.created_at).toLocaleDateString('hi-IN')}</p>
-                                        <p><strong>समय:</strong> {new Date(selectedChallan.created_at).toLocaleTimeString('hi-IN')}</p>
+                                        <p><strong>दिनांक व समय:</strong> {formatDateTimeIST(selectedChallan.created_at)}</p>
                                       </div>
                                       <div>
                                         <p><strong>बनाने वाला:</strong> {selectedChallan.created_by}</p>
@@ -490,6 +551,17 @@ function App() {
                                         </TableBody>
                                       </Table>
                                     </div>
+                                    <div className="bg-orange-50 p-4 rounded-lg">
+                                      <h4 className="font-medium mb-2">कुल मात्रा:</h4>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <span className="font-semibold">कुल बैग:</span> {selectedChallan.totals?.total_bags || 0}
+                                        </div>
+                                        <div>
+                                          <span className="font-semibold">कुल किग्रा:</span> {selectedChallan.totals?.total_kgs || 0}
+                                        </div>
+                                      </div>
+                                    </div>
                                     <div className="flex gap-2 pt-4">
                                       <Button
                                         onClick={() => printChallan(selectedChallan)}
@@ -510,7 +582,7 @@ function App() {
                             >
                               <Printer className="w-4 h-4" />
                             </Button>
-                            {(user.role === 'admin' || user.role === 'supervisor') && (
+                            {user.permissions?.includes('delete_challan') && (
                               <Button
                                 onClick={() => deleteChallan(challan.id)}
                                 size="sm"
@@ -610,151 +682,234 @@ function App() {
           </TabsContent>
 
           {/* Reports Tab */}
-          {(user?.role === 'admin' || user?.role === 'supervisor') && (
-            <TabsContent value="reports">
-              <Card className="bg-white/90 backdrop-blur-sm border-orange-200">
-                <CardHeader>
-                  <CardTitle className="text-orange-800">रिपोर्ट</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <Label>रिपोर्ट प्रकार</Label>
-                      <Select value={reportQuery.report_type} onValueChange={(value) => setReportQuery({...reportQuery, report_type: value})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="daily">दैनिक</SelectItem>
-                          <SelectItem value="weekly">साप्ताहिक</SelectItem>
-                          <SelectItem value="monthly">मासिक</SelectItem>
-                          <SelectItem value="yearly">वार्षिक</SelectItem>
-                          <SelectItem value="custom">कस्टम</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    {reportQuery.report_type === 'custom' && (
-                      <>
-                        <div>
-                          <Label>शुरुआती तारीख</Label>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="outline" className="w-full justify-start text-left font-normal">
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {reportQuery.start_date ? format(reportQuery.start_date, "dd/MM/yyyy") : "तारीख चुनें"}
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={reportQuery.start_date}
-                                onSelect={(date) => setReportQuery({...reportQuery, start_date: date})}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <div>
-                          <Label>अंतिम तारीख</Label>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="outline" className="w-full justify-start text-left font-normal">
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {reportQuery.end_date ? format(reportQuery.end_date, "dd/MM/yyyy") : "तारीख चुनें"}
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={reportQuery.end_date}
-                                onSelect={(date) => setReportQuery({...reportQuery, end_date: date})}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                      </>
-                    )}
+          <TabsContent value="reports">
+            <Card className="bg-white/90 backdrop-blur-sm border-orange-200">
+              <CardHeader>
+                <CardTitle className="text-orange-800">रिपोर्ट</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>रिपोर्ट प्रकार</Label>
+                    <Select value={reportQuery.report_type} onValueChange={(value) => setReportQuery({...reportQuery, report_type: value})}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">दैनिक</SelectItem>
+                        <SelectItem value="weekly">साप्ताहिक</SelectItem>
+                        <SelectItem value="monthly">मासिक</SelectItem>
+                        <SelectItem value="yearly">वार्षिक</SelectItem>
+                        <SelectItem value="custom">कस्टम</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   
-                  <Button onClick={generateReport} className="bg-orange-600 hover:bg-orange-700">
-                    रिपोर्ट तैयार करें
-                  </Button>
-                  
-                  {reports && (
-                    <Card className="border-orange-100">
-                      <CardHeader>
-                        <CardTitle className="text-lg">रिपोर्ट परिणाम</CardTitle>
-                        <CardDescription>
-                          कुल चालान: {reports.total_challans}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          <div>
-                            <h4 className="font-medium mb-2">आइटम कुल मात्रा:</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                              {Object.entries(reports.item_totals).map(([item, total]) => (
-                                <div key={item} className="flex justify-between bg-orange-50 p-2 rounded">
-                                  <span>{item}</span>
-                                  <span className="font-medium">{total}</span>
-                                </div>
-                              ))}
-                            </div>
+                  {reportQuery.report_type === 'custom' && (
+                    <>
+                      <div>
+                        <Label>शुरुआती तारीख</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="w-full justify-start text-left font-normal">
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {reportQuery.start_date ? format(reportQuery.start_date, "dd/MM/yyyy") : "तारीख चुनें"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={reportQuery.start_date}
+                              onSelect={(date) => setReportQuery({...reportQuery, start_date: date})}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div>
+                        <Label>अंतिम तारीख</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="w-full justify-start text-left font-normal">
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {reportQuery.end_date ? format(reportQuery.end_date, "dd/MM/yyyy") : "तारीख चुनें"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={reportQuery.end_date}
+                              onSelect={(date) => setReportQuery({...reportQuery, end_date: date})}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                <Button onClick={generateReport} className="bg-orange-600 hover:bg-orange-700">
+                  रिपोर्ट तैयार करें
+                </Button>
+                
+                {reports && (
+                  <Card className="border-orange-100">
+                    <CardHeader>
+                      <CardTitle className="text-lg">रिपोर्ट परिणाम</CardTitle>
+                      <CardDescription>
+                        कुल चालान: {reports.total_challans} | कुल बैग: {reports.total_bags_all} | कुल किग्रा: {reports.total_kgs_all}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="font-medium mb-2">आइटम कुल मात्रा:</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {Object.entries(reports.item_totals).map(([item, total]) => (
+                              <div key={item} className="flex justify-between bg-orange-50 p-2 rounded">
+                                <span>{item}</span>
+                                <span className="font-medium">{total}</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* Users Tab */}
-          {user?.role === 'admin' && (
-            <TabsContent value="users">
-              <Card className="bg-white/90 backdrop-blur-sm border-orange-200">
-                <CardHeader>
-                  <CardTitle className="text-orange-800">उपयोगकर्ता प्रबंधन</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>नाम</TableHead>
-                        <TableHead>ईमेल</TableHead>
-                        <TableHead>भूमिका</TableHead>
-                        <TableHead>स्थिति</TableHead>
-                        <TableHead>बनाने की तारीख</TableHead>
+          <TabsContent value="users">
+            <Card className="bg-white/90 backdrop-blur-sm border-orange-200">
+              <CardHeader>
+                <CardTitle className="text-orange-800">उपयोगकर्ता प्रबंधन</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>नाम</TableHead>
+                      <TableHead>ईमेल</TableHead>
+                      <TableHead>भूमिका</TableHead>
+                      <TableHead>स्थिति</TableHead>
+                      <TableHead>बनाने की तारीख</TableHead>
+                      {user.permissions?.includes('manage_permissions') && <TableHead>अनुमतियां</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((userData) => (
+                      <TableRow key={userData.id}>
+                        <TableCell>{userData.username}</TableCell>
+                        <TableCell>{userData.email}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                            {userData.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={userData.is_active ? "default" : "destructive"}>
+                            {userData.is_active ? "सक्रिय" : "निष्क्रिय"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatDateTimeIST(userData.created_at)}</TableCell>
+                        {user.permissions?.includes('manage_permissions') && (
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openPermissionDialog(userData)}
+                              className="border-orange-300 hover:bg-orange-50"
+                            >
+                              <Settings className="w-4 h-4 mr-1" />
+                              प्रबंधित करें
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell>{user.username}</TableCell>
-                          <TableCell>{user.email}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                              {user.role}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={user.is_active ? "default" : "destructive"}>
-                              {user.is_active ? "सक्रिय" : "निष्क्रिय"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{new Date(user.created_at).toLocaleDateString('hi-IN')}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Permissions Management Tab */}
+          <TabsContent value="permissions">
+            <Card className="bg-white/90 backdrop-blur-sm border-orange-200">
+              <CardHeader>
+                <CardTitle className="text-orange-800">अनुमति प्रबंधन</CardTitle>
+                <CardDescription>उपयोगकर्ताओं की अनुमतियां प्रबंधित करें</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">उपलब्ध अनुमतियां:</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {Object.entries(permissions).map(([key, description]) => (
+                      <Card key={key} className="border-gray-200">
+                        <CardContent className="p-4">
+                          <div className="flex items-center space-x-2">
+                            <Shield className="w-4 h-4 text-orange-600" />
+                            <div>
+                              <p className="font-medium">{key}</p>
+                              <p className="text-sm text-gray-600">{description}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+
+        {/* Permission Management Dialog */}
+        <Dialog open={permissionDialogOpen} onOpenChange={setPermissionDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>अनुमतियां प्रबंधित करें - {selectedUser?.username}</DialogTitle>
+              <DialogDescription>
+                इस उपयोगकर्ता के लिए अनुमतियां चुनें
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {Object.entries(permissions).map(([key, description]) => (
+                <div key={key} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={key}
+                    checked={userPermissions.includes(key)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setUserPermissions([...userPermissions, key]);
+                      } else {
+                        setUserPermissions(userPermissions.filter(p => p !== key));
+                      }
+                    }}
+                  />
+                  <Label htmlFor={key} className="text-sm">
+                    <div>
+                      <p className="font-medium">{key}</p>
+                      <p className="text-gray-600">{description}</p>
+                    </div>
+                  </Label>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button variant="outline" onClick={() => setPermissionDialogOpen(false)}>
+                रद्द करें
+              </Button>
+              <Button onClick={updateUserPermissions} className="bg-orange-600 hover:bg-orange-700">
+                अपडेट करें
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
       <Toaster />
     </div>
