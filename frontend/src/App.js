@@ -265,20 +265,21 @@ function App() {
     setNewChallan({ ...newChallan, items });
   };
 
-  const formatDateTimeLocal = (dateString) => {
+  const formatDateTimeIST = (dateString) => {
     try {
-      // Parse the UTC datetime and convert to user's local timezone
-      const utcDate = new Date(dateString);
+      // Parse the datetime which should now be in IST from backend
+      const date = new Date(dateString);
       
-      // Format in user's local timezone
-      const localDate = new Date(utcDate.toLocaleString());
+      // Create IST time manually (UTC+5:30)
+      const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
+      const istTime = new Date(utcTime + (5.5 * 60 * 60 * 1000));
       
-      const day = localDate.getDate().toString().padStart(2, '0');
-      const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
-      const year = localDate.getFullYear();
+      const day = istTime.getDate().toString().padStart(2, '0');
+      const month = (istTime.getMonth() + 1).toString().padStart(2, '0');
+      const year = istTime.getFullYear();
       
-      let hours = localDate.getHours();
-      const minutes = localDate.getMinutes().toString().padStart(2, '0');
+      let hours = istTime.getHours();
+      const minutes = istTime.getMinutes().toString().padStart(2, '0');
       const ampm = hours >= 12 ? 'pm' : 'am';
       hours = hours % 12;
       hours = hours ? hours : 12; // 0 should be 12
@@ -288,6 +289,46 @@ function App() {
       console.error('Date formatting error:', error);
       return dateString;
     }
+  };
+
+  const parseVoiceInput = (transcript, fieldType) => {
+    const text = transcript.toLowerCase().trim();
+    
+    if (fieldType === 'quantity') {
+      // Parse both quantity and unit from voice input
+      // Patterns: "50 kgs", "25 bags", "100 kilograms", "75 kilogram", etc.
+      const patterns = [
+        /(\d+(?:\.\d+)?)\s*(kgs?|kilograms?|kilogram)/i,
+        /(\d+(?:\.\d+)?)\s*(bags?|bag)/i,
+        /(\d+(?:\.\d+)?)\s*(kg|kilogram|kilograms)/i
+      ];
+      
+      for (let pattern of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+          const quantity = parseFloat(match[1]);
+          const unitText = match[2].toLowerCase();
+          
+          // Normalize unit
+          let unit = 'bags'; // default
+          if (unitText.includes('kg') || unitText.includes('kilogram')) {
+            unit = 'kgs';
+          } else if (unitText.includes('bag')) {
+            unit = 'bags';
+          }
+          
+          return { quantity: quantity.toString(), unit: unit };
+        }
+      }
+      
+      // If no unit found, just extract number
+      const numberMatch = text.match(/(\d+(?:\.\d+)?)/);
+      if (numberMatch) {
+        return { quantity: numberMatch[1], unit: null };
+      }
+    }
+    
+    return { quantity: text, unit: null };
   };
 
   const startVoiceRecognition = (fieldType, index = null) => {
