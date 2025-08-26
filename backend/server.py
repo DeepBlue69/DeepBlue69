@@ -192,7 +192,7 @@ async def get_next_challan_number():
     today = get_ist_date()
     date_prefix = today.strftime("%Y/%m/%d")
     
-    # Find the highest challan number for today
+    # Find the highest challan number for today using IST timezone
     today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=IST)
     today_end = today_start + timedelta(days=1)
     
