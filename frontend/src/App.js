@@ -383,7 +383,7 @@ function App() {
 
   const printChallan = (challan) => {
     const printWindow = window.open('', '_blank');
-    const challanDateTime = formatDateTimeLocal(challan.created_at);
+    const challanDateTime = formatDateTimeIST(challan.created_at);
     
     printWindow.document.write(`
       <!DOCTYPE html>
