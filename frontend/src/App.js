@@ -615,7 +615,7 @@ function App() {
                               </span>
                             </div>
                             <div>
-                              <p className="font-medium text-blue-700">वाहन: {challan.vehicle_no}</p>
+                              <p className="font-medium text-blue-700">वाहन: {challan.vehicle_no || 'N/A'}</p>
                               <p className="font-medium">आइटम: {challan.items.length}</p>
                               <div className="text-sm text-gray-600 mt-1">
                                 {challan.items.map((item, index) => (
