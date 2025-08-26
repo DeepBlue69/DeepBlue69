@@ -19,18 +19,6 @@ import re
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Fixed IST Timezone - Indian Standard Time (UTC+5:30)
-IST = timezone(timedelta(hours=5, minutes=30))
-
-def get_ist_now():
-    """Get current time in IST - permanently fixed to Indian timezone"""
-    utc_now = datetime.now(timezone.utc)
-    return utc_now.astimezone(IST)
-
-def get_ist_date():
-    """Get current date in IST"""
-    return get_ist_now().date()
-
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -72,6 +60,14 @@ DEFAULT_PERMISSIONS = {
     "data_entry": ["create_challan", "view_own_challans"]
 }
 
+def get_utc_now():
+    """Get current time in UTC - let frontend handle timezone display"""
+    return datetime.now(timezone.utc)
+
+def get_local_date():
+    """Get current date in UTC - let frontend handle timezone display"""
+    return get_utc_now().date()
+
 # Define Models
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -80,7 +76,7 @@ class User(BaseModel):
     password_hash: str
     role: Literal["admin", "supervisor", "data_entry"]
     permissions: List[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
     is_active: bool = True
 
 class UserCreate(BaseModel):
@@ -114,7 +110,7 @@ class Challan(BaseModel):
     items: List[ChallanItem]
     totals: ChallanTotals
     created_by: str
-    created_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
     items_hindi: Optional[List[Dict]] = None
     vehicle_no_hindi: Optional[str] = None
 
@@ -151,7 +147,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = get_ist_now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = get_utc_now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -189,11 +185,11 @@ def require_permission(permission: str):
 
 async def get_next_challan_number():
     """Get next challan number with YYYY/MM/DD-XXX format that resets daily"""
-    today = get_ist_date()
+    today = get_local_date()
     date_prefix = today.strftime("%Y/%m/%d")
     
     # Find the highest challan number for today
-    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=IST)
+    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
     today_end = today_start + timedelta(days=1)
     
     last_challan = await db.challans.find_one(
@@ -389,8 +385,8 @@ async def delete_challan(challan_id: str, current_user: User = Depends(require_p
 
 @api_router.post("/reports")
 async def get_reports(report_query: ReportQuery, current_user: User = Depends(require_permission("view_reports"))):
-    # Calculate date range based on report type (all in IST)
-    now = get_ist_now()
+    # Calculate date range based on report type (all in UTC)
+    now = get_utc_now()
     
     if report_query.report_type == "daily":
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -409,8 +405,8 @@ async def get_reports(report_query: ReportQuery, current_user: User = Depends(re
     elif report_query.report_type == "custom":
         if not report_query.start_date or not report_query.end_date:
             raise HTTPException(status_code=400, detail="Start and end dates required for custom reports")
-        start_date = datetime.combine(report_query.start_date, datetime.min.time()).replace(tzinfo=IST)
-        end_date = datetime.combine(report_query.end_date, datetime.max.time()).replace(tzinfo=IST)
+        start_date = datetime.combine(report_query.start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_date = datetime.combine(report_query.end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
     
     # Query challans in date range
     challans = await db.challans.find({
