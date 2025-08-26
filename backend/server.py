@@ -501,10 +501,20 @@ async def create_admin_user():
             permissions=DEFAULT_PERMISSIONS["admin"]
         )
         await db.users.insert_one(admin_user.dict())
-        print("Admin user created: username=admin, password=admin123")
+        print(f"Admin user created: username=admin, password=admin123")
+        print(f"Current IST time: {get_ist_now().isoformat()}")
 
 # Include the router in the main app
 app.include_router(api_router)
+
+# Custom JSON encoder for FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+
+@app.middleware("http")
+async def timezone_middleware(request, call_next):
+    response = await call_next(request)
+    return response
 
 app.add_middleware(
     CORSMiddleware,
