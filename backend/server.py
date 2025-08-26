@@ -122,6 +122,11 @@ class Challan(BaseModel):
     created_at: datetime = Field(default_factory=get_ist_now)
     items_hindi: Optional[List[Dict]] = None
     vehicle_no_hindi: Optional[str] = None
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class ChallanCreate(BaseModel):
     vehicle_no: str
