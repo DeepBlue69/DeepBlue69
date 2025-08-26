@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from './components/ui/label';
 import { Separator } from './components/ui/separator';
 import { Checkbox } from './components/ui/checkbox';
-import { CalendarIcon, Plus, Trash2, FileText, Users, BarChart3, LogOut, Eye, Printer, Settings, Shield } from 'lucide-react';
+import { CalendarIcon, Plus, Trash2, FileText, Users, BarChart3, LogOut, Eye, Printer, Settings, Shield, Mic, MicOff } from 'lucide-react';
 import { format } from 'date-fns';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -29,7 +29,10 @@ function App() {
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '', role: 'data_entry' });
   const [challans, setChallans] = useState([]);
-  const [newChallan, setNewChallan] = useState({ items: [{ name: '', quantity: '', unit: 'bags' }] });
+  const [newChallan, setNewChallan] = useState({ 
+    vehicle_no: '', 
+    items: [{ name: '', quantity: '', unit: 'bags' }] 
+  });
   const [reports, setReports] = useState(null);
   const [reportQuery, setReportQuery] = useState({ report_type: 'daily', start_date: null, end_date: null });
   const [users, setUsers] = useState([]);
@@ -40,6 +43,22 @@ function App() {
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userPermissions, setUserPermissions] = useState([]);
+  
+  // Voice recognition states
+  const [isListening, setIsListening] = useState({});
+  const [speechRecognition, setSpeechRecognition] = useState(null);
+
+  useEffect(() => {
+    // Initialize speech recognition
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+      setSpeechRecognition(recognition);
+    }
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -165,6 +184,7 @@ function App() {
     e.preventDefault();
     try {
       const challanData = {
+        vehicle_no: newChallan.vehicle_no,
         items: newChallan.items.map(item => ({
           ...item,
           quantity: parseFloat(item.quantity)
@@ -176,10 +196,10 @@ function App() {
       });
       
       toast.success('चालान बनाया गया!');
-      setNewChallan({ items: [{ name: '', quantity: '', unit: 'bags' }] });
+      setNewChallan({ vehicle_no: '', items: [{ name: '', quantity: '', unit: 'bags' }] });
       fetchChallans();
     } catch (error) {
-      toast.error('चालान बनाने में त्रुटि');
+      toast.error('चालान बनाने में त्रुटि: ' + (error.response?.data?.detail || 'अज्ञात त्रुटि'));
     }
   };
 
@@ -245,21 +265,20 @@ function App() {
     setNewChallan({ ...newChallan, items });
   };
 
-  const formatDateTimeIST = (dateString) => {
+  const formatDateTimeLocal = (dateString) => {
     try {
-      // Parse the ISO string which should already include IST timezone (+05:30)
-      const date = new Date(dateString);
+      // Parse the UTC datetime and convert to user's local timezone
+      const utcDate = new Date(dateString);
       
-      // Convert to IST if it's not already in IST
-      const istTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+      // Format in user's local timezone
+      const localDate = new Date(utcDate.toLocaleString());
       
-      // Format in Indian format
-      const day = istTime.getDate().toString().padStart(2, '0');
-      const month = (istTime.getMonth() + 1).toString().padStart(2, '0');
-      const year = istTime.getFullYear();
+      const day = localDate.getDate().toString().padStart(2, '0');
+      const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
+      const year = localDate.getFullYear();
       
-      let hours = istTime.getHours();
-      const minutes = istTime.getMinutes().toString().padStart(2, '0');
+      let hours = localDate.getHours();
+      const minutes = localDate.getMinutes().toString().padStart(2, '0');
       const ampm = hours >= 12 ? 'pm' : 'am';
       hours = hours % 12;
       hours = hours ? hours : 12; // 0 should be 12
@@ -271,9 +290,59 @@ function App() {
     }
   };
 
+  const startVoiceRecognition = (fieldType, index = null) => {
+    if (!speechRecognition) {
+      toast.error('आपका ब्राउज़र वॉयस रिकग्निशन का समर्थन नहीं करता');
+      return;
+    }
+
+    const fieldKey = index !== null ? `${fieldType}_${index}` : fieldType;
+    
+    setIsListening({ ...isListening, [fieldKey]: true });
+
+    speechRecognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      
+      if (fieldType === 'vehicle_no') {
+        // Format vehicle number to XX-XX-XX-XXXX format
+        const formatted = transcript.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (formatted.length >= 8) {
+          const vehicleNo = `${formatted.substr(0,2)}-${formatted.substr(2,2)}-${formatted.substr(4,2)}-${formatted.substr(6,4)}`;
+          setNewChallan({ ...newChallan, vehicle_no: vehicleNo });
+        } else {
+          setNewChallan({ ...newChallan, vehicle_no: transcript });
+        }
+      } else if (fieldType === 'item_name') {
+        updateItem(index, 'name', transcript);
+      } else if (fieldType === 'quantity') {
+        // Extract numbers from transcript
+        const numberMatch = transcript.match(/\d+(\.\d+)?/);
+        if (numberMatch) {
+          updateItem(index, 'quantity', numberMatch[0]);
+        } else {
+          updateItem(index, 'quantity', transcript);
+        }
+      }
+      
+      setIsListening({ ...isListening, [fieldKey]: false });
+      toast.success(`वॉयस इनपुट: ${transcript}`);
+    };
+
+    speechRecognition.onerror = (event) => {
+      setIsListening({ ...isListening, [fieldKey]: false });
+      toast.error('वॉयस रिकग्निशन में त्रुटि: ' + event.error);
+    };
+
+    speechRecognition.onend = () => {
+      setIsListening({ ...isListening, [fieldKey]: false });
+    };
+
+    speechRecognition.start();
+  };
+
   const printChallan = (challan) => {
     const printWindow = window.open('', '_blank');
-    const challanDateTime = formatDateTimeIST(challan.created_at);
+    const challanDateTime = formatDateTimeLocal(challan.created_at);
     
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -285,6 +354,7 @@ function App() {
             body { font-family: 'Noto Sans Devanagari', Arial, sans-serif; font-size: 14px; }
             .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
             .challan-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+            .vehicle-info { background-color: #f0f8ff; padding: 10px; border: 1px solid #ccc; margin-bottom: 20px; }
             .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
             .items-table th, .items-table td { border: 1px solid #000; padding: 8px; text-align: left; }
             .items-table th { background-color: #f0f0f0; font-weight: bold; }
@@ -309,6 +379,10 @@ function App() {
             <div>
               <strong>द्वारा बनाया गया / Created By:</strong> ${challan.created_by}
             </div>
+          </div>
+          
+          <div class="vehicle-info">
+            <strong>वाहन नंबर / Vehicle No:</strong> ${challan.vehicle_no}
           </div>
           
           <table class="items-table">
@@ -537,10 +611,11 @@ function App() {
                                 चालान #{challan.challan_number}
                               </Badge>
                               <span className="text-sm text-gray-600">
-                                {formatDateTimeIST(challan.created_at)}
+                                {formatDateTimeLocal(challan.created_at)}
                               </span>
                             </div>
                             <div>
+                              <p className="font-medium text-blue-700">वाहन: {challan.vehicle_no}</p>
                               <p className="font-medium">आइटम: {challan.items.length}</p>
                               <div className="text-sm text-gray-600 mt-1">
                                 {challan.items.map((item, index) => (
@@ -575,7 +650,8 @@ function App() {
                                   <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4 text-sm">
                                       <div>
-                                        <p><strong>दिनांक व समय:</strong> {formatDateTimeIST(selectedChallan.created_at)}</p>
+                                        <p><strong>दिनांक व समय:</strong> {formatDateTimeLocal(selectedChallan.created_at)}</p>
+                                        <p><strong>वाहन नंबर:</strong> <span className="text-blue-700 font-mono">{selectedChallan.vehicle_no}</span></p>
                                       </div>
                                       <div>
                                         <p><strong>बनाने वाला:</strong> {selectedChallan.created_by}</p>
@@ -658,9 +734,43 @@ function App() {
             <Card className="bg-white/90 backdrop-blur-sm border-orange-200">
               <CardHeader>
                 <CardTitle className="text-orange-800">नया चालान बनाएं</CardTitle>
+                <CardDescription>
+                  {speechRecognition ? (
+                    <span className="text-green-600">🎤 वॉयस इनपुट उपलब्ध है - माइक आइकन पर क्लिक करें</span>
+                  ) : (
+                    <span className="text-red-600">⚠️ वॉयस इनपुट आपके ब्राउज़र में उपलब्ध नहीं है</span>
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={createChallan} className="space-y-6">
+                  {/* Vehicle Number */}
+                  <div>
+                    <Label>वाहन नंबर (XX-XX-XX-XXXX)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="e.g., MH-12-AB-1234"
+                        value={newChallan.vehicle_no}
+                        onChange={(e) => setNewChallan({...newChallan, vehicle_no: e.target.value.toUpperCase()})}
+                        className="flex-1"
+                        required
+                      />
+                      {speechRecognition && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => startVoiceRecognition('vehicle_no')}
+                          disabled={isListening['vehicle_no']}
+                          className="px-3"
+                        >
+                          {isListening['vehicle_no'] ? <MicOff className="w-4 h-4 text-red-500" /> : <Mic className="w-4 h-4 text-green-600" />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Items */}
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <h3 className="text-lg font-medium">आइटम जोड़ें</h3>
@@ -673,47 +783,76 @@ function App() {
                     {newChallan.items.map((item, index) => (
                       <Card key={index} className="border-orange-100">
                         <CardContent className="p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                            <div className="md:col-span-2">
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                            <div className="md:col-span-5">
                               <Label>आइटम का नाम</Label>
-                              <Input
-                                placeholder="e.g., Rice, Wheat"
-                                value={item.name}
-                                onChange={(e) => updateItem(index, 'name', e.target.value)}
-                                required
-                              />
-                            </div>
-                            <div>
-                              <Label>मात्रा</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="0"
-                                value={item.quantity}
-                                onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                                required
-                              />
-                            </div>
-                            <div className="flex gap-2">
-                              <div className="flex-1">
-                                <Label>इकाई</Label>
-                                <Select value={item.unit} onValueChange={(value) => updateItem(index, 'unit', value)}>
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="bags">Bags</SelectItem>
-                                    <SelectItem value="kgs">Kgs</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                              <div className="flex gap-2">
+                                <Input
+                                  placeholder="e.g., Rice, Wheat"
+                                  value={item.name}
+                                  onChange={(e) => updateItem(index, 'name', e.target.value)}
+                                  className="flex-1"
+                                  required
+                                />
+                                {speechRecognition && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => startVoiceRecognition('item_name', index)}
+                                    disabled={isListening[`item_name_${index}`]}
+                                    className="px-3"
+                                  >
+                                    {isListening[`item_name_${index}`] ? <MicOff className="w-4 h-4 text-red-500" /> : <Mic className="w-4 h-4 text-green-600" />}
+                                  </Button>
+                                )}
                               </div>
+                            </div>
+                            <div className="md:col-span-3">
+                              <Label>मात्रा</Label>
+                              <div className="flex gap-2">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0"
+                                  value={item.quantity}
+                                  onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                                  className="flex-1"
+                                  required
+                                />
+                                {speechRecognition && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => startVoiceRecognition('quantity', index)}
+                                    disabled={isListening[`quantity_${index}`]}
+                                    className="px-3"
+                                  >
+                                    {isListening[`quantity_${index}`] ? <MicOff className="w-4 h-4 text-red-500" /> : <Mic className="w-4 h-4 text-green-600" />}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="md:col-span-3">
+                              <Label>इकाई</Label>
+                              <Select value={item.unit} onValueChange={(value) => updateItem(index, 'unit', value)}>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="bags">Bags</SelectItem>
+                                  <SelectItem value="kgs">Kgs</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="md:col-span-1">
                               {newChallan.items.length > 1 && (
                                 <Button
                                   type="button"
                                   onClick={() => removeItem(index)}
                                   variant="destructive"
                                   size="sm"
-                                  className="mt-6"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -867,7 +1006,7 @@ function App() {
                             {userData.is_active ? "सक्रिय" : "निष्क्रिय"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{formatDateTimeIST(userData.created_at)}</TableCell>
+                        <TableCell>{formatDateTimeLocal(userData.created_at)}</TableCell>
                         {user && user.permissions && user.permissions.includes('manage_permissions') && (
                           <TableCell>
                             <Button
