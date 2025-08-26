@@ -382,7 +382,7 @@ function App() {
           </div>
           
           <div class="vehicle-info">
-            <strong>वाहन नंबर / Vehicle No:</strong> ${challan.vehicle_no}
+            <strong>वाहन नंबर / Vehicle No:</strong> ${challan.vehicle_no || 'N/A'}
           </div>
           
           <table class="items-table">
