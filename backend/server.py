@@ -168,7 +168,10 @@ async def login(user_data: UserLogin):
         raise HTTPException(status_code=401, detail="Account is inactive")
     
     access_token = create_access_token({"sub": user["username"]})
-    user_info = {k: v for k, v in user.items() if k != "password_hash"}
+    # Convert ObjectId to string and remove MongoDB _id field
+    user_info = {k: v for k, v in user.items() if k not in ["password_hash", "_id"]}
+    if "_id" in user:
+        user_info["_id"] = str(user["_id"])
     
     return {
         "access_token": access_token,
