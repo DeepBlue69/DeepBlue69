@@ -349,8 +349,10 @@ async def create_challan(challan_data: ChallanCreate, current_user: User = Depen
     # Create IST timestamp
     ist_now = get_ist_now()
     
-    challan = {
-        "id": str(uuid.uuid4()),
+    challan_id = str(uuid.uuid4())
+    
+    challan_document = {
+        "id": challan_id,
         "challan_number": challan_number,
         "vehicle_no": challan_data.vehicle_no,
         "items": [item.dict() for item in challan_data.items],
@@ -362,13 +364,22 @@ async def create_challan(challan_data: ChallanCreate, current_user: User = Depen
         "hindi_totals": hindi_totals
     }
     
-    await db.challans.insert_one(challan)
+    await db.challans.insert_one(challan_document)
     
-    # Return response with preserved timezone
-    response_data = challan.copy()
-    response_data["created_at"] = ist_now.isoformat()  # Manually format to preserve timezone
+    # Return clean response without MongoDB ObjectId
+    response_data = {
+        "id": challan_id,
+        "challan_number": challan_number,
+        "vehicle_no": challan_data.vehicle_no,
+        "items": [item.dict() for item in challan_data.items],
+        "totals": totals.dict(),
+        "items_hindi": items_hindi,
+        "vehicle_no_hindi": vehicle_no_hindi,
+        "created_by": current_user.username,
+        "created_at": ist_now.isoformat()  # Manually format to preserve timezone
+    }
     
-    return JSONResponse(content=response_data)
+    return response_data
 
 @api_router.get("/challans", response_model=List[Challan])
 async def get_challans(current_user: User = Depends(get_current_user)):
