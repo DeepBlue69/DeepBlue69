@@ -61,15 +61,25 @@ function App() {
 
   const getCurrentUser = async () => {
     try {
+      setUserLoading(true);
       const response = await axios.get(`${API}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setUser(response.data);
+      const userData = response.data;
+      
+      // Ensure permissions is always an array
+      if (!userData.permissions) {
+        userData.permissions = [];
+      }
+      
+      setUser(userData);
     } catch (error) {
       console.error('Error getting current user:', error);
       localStorage.removeItem('token');
       setToken(null);
       setUser(null);
+    } finally {
+      setUserLoading(false);
     }
   };
 
