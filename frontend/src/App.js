@@ -587,7 +587,7 @@ function App() {
                             >
                               <Printer className="w-4 h-4" />
                             </Button>
-                            {user.permissions?.includes('delete_challan') && (
+                            {user && user.permissions && user.permissions.includes('delete_challan') && (
                               <Button
                                 onClick={() => deleteChallan(challan.id)}
                                 size="sm"
