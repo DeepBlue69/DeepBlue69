@@ -351,7 +351,14 @@ async def get_challans(current_user: User = Depends(get_current_user)):
     else:
         raise HTTPException(status_code=403, detail="No permission to view challans")
     
-    return [Challan(**challan) for challan in challans]
+    # Handle backward compatibility for challans without vehicle_no
+    processed_challans = []
+    for challan in challans:
+        if "vehicle_no" not in challan:
+            challan["vehicle_no"] = None
+        processed_challans.append(Challan(**challan))
+    
+    return processed_challans
 
 @api_router.get("/challans/{challan_id}", response_model=Challan)
 async def get_challan(challan_id: str, current_user: User = Depends(get_current_user)):
