@@ -246,26 +246,29 @@ function App() {
   };
 
   const formatDateTimeIST = (dateString) => {
-    const date = new Date(dateString);
-    // Create IST date by adding 5 hours 30 minutes to UTC if timezone is not already included
-    let istDate;
-    if (dateString.includes('+') || dateString.includes('Z')) {
-      // Timezone info already present, just use it
-      istDate = date;
-    } else {
-      // No timezone info, assume UTC and convert to IST
-      istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+    try {
+      // Parse the ISO string which should already include IST timezone (+05:30)
+      const date = new Date(dateString);
+      
+      // Convert to IST if it's not already in IST
+      const istTime = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+      
+      // Format in Indian format
+      const day = istTime.getDate().toString().padStart(2, '0');
+      const month = (istTime.getMonth() + 1).toString().padStart(2, '0');
+      const year = istTime.getFullYear();
+      
+      let hours = istTime.getHours();
+      const minutes = istTime.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'pm' : 'am';
+      hours = hours % 12;
+      hours = hours ? hours : 12; // 0 should be 12
+      
+      return `${day}/${month}/${year}, ${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return dateString;
     }
-    
-    return istDate.toLocaleString('hi-IN', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
   };
 
   const printChallan = (challan) => {
