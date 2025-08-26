@@ -114,6 +114,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     user = await db.users.find_one({"username": username})
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    
+    # Convert ObjectId to string and remove _id field for Pydantic
+    if "_id" in user:
+        user.pop("_id")
+    
     return User(**user)
 
 async def get_next_challan_number():
