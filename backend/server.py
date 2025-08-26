@@ -317,7 +317,7 @@ async def translate_text(request: TranslationRequest, current_user: User = Depen
     hindi_text = await translate_to_hindi(request.text)
     return {"english": request.text, "hindi": hindi_text}
 
-@api_router.post("/challans", response_model=Challan)
+@api_router.post("/challans")
 async def create_challan(challan_data: ChallanCreate, current_user: User = Depends(require_permission("create_challan"))):
     challan_number = await get_next_challan_number()
     
@@ -346,22 +346,29 @@ async def create_challan(challan_data: ChallanCreate, current_user: User = Depen
         "total_kgs_hindi": await translate_to_hindi("Total Kgs")
     }
     
-    challan = Challan(
-        challan_number=challan_number,
-        vehicle_no=challan_data.vehicle_no,
-        items=challan_data.items,
-        totals=totals,
-        items_hindi=items_hindi,
-        vehicle_no_hindi=vehicle_no_hindi,
-        created_by=current_user.username
-    )
+    # Create IST timestamp
+    ist_now = get_ist_now()
     
-    # Store Hindi totals in the challan document
-    challan_dict = challan.dict()
-    challan_dict["hindi_totals"] = hindi_totals
+    challan = {
+        "id": str(uuid.uuid4()),
+        "challan_number": challan_number,
+        "vehicle_no": challan_data.vehicle_no,
+        "items": [item.dict() for item in challan_data.items],
+        "totals": totals.dict(),
+        "items_hindi": items_hindi,
+        "vehicle_no_hindi": vehicle_no_hindi,
+        "created_by": current_user.username,
+        "created_at": ist_now,  # Store IST datetime
+        "hindi_totals": hindi_totals
+    }
     
-    await db.challans.insert_one(challan_dict)
-    return challan
+    await db.challans.insert_one(challan)
+    
+    # Return response with preserved timezone
+    response_data = challan.copy()
+    response_data["created_at"] = ist_now.isoformat()  # Manually format to preserve timezone
+    
+    return JSONResponse(content=response_data)
 
 @api_router.get("/challans", response_model=List[Challan])
 async def get_challans(current_user: User = Depends(get_current_user)):
