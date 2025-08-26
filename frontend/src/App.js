@@ -651,7 +651,7 @@ function App() {
                                     <div className="grid grid-cols-2 gap-4 text-sm">
                                       <div>
                                         <p><strong>दिनांक व समय:</strong> {formatDateTimeLocal(selectedChallan.created_at)}</p>
-                                        <p><strong>वाहन नंबर:</strong> <span className="text-blue-700 font-mono">{selectedChallan.vehicle_no}</span></p>
+                                        <p><strong>वाहन नंबर:</strong> <span className="text-blue-700 font-mono">{selectedChallan.vehicle_no || 'N/A'}</span></p>
                                       </div>
                                       <div>
                                         <p><strong>बनाने वाला:</strong> {selectedChallan.created_by}</p>
