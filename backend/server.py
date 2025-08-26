@@ -526,14 +526,25 @@ async def create_admin_user():
 # Include the router in the main app
 app.include_router(api_router)
 
-# Custom JSON encoder for FastAPI
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
-
+# Custom response middleware to preserve datetime timezone information
 @app.middleware("http")
-async def timezone_middleware(request, call_next):
+async def custom_response_middleware(request, call_next):
     response = await call_next(request)
     return response
+
+# Override JSONResponse to use custom encoder
+def custom_jsonable_encoder(obj):
+    """Custom encoder that preserves datetime timezone information"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()  # Preserves timezone like +05:30
+    elif isinstance(obj, list):
+        return [custom_jsonable_encoder(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: custom_jsonable_encoder(value) for key, value in obj.items()}
+    elif hasattr(obj, '__dict__'):
+        return custom_jsonable_encoder(obj.__dict__)
+    else:
+        return jsonable_encoder(obj)
 
 app.add_middleware(
     CORSMiddleware,
