@@ -381,7 +381,7 @@ async def create_challan(challan_data: ChallanCreate, current_user: User = Depen
     
     return response_data
 
-@api_router.get("/challans", response_model=List[Challan])
+@api_router.get("/challans")
 async def get_challans(current_user: User = Depends(get_current_user)):
     if check_permission(current_user, "view_all_challans"):
         # User can see all challans
@@ -392,12 +392,28 @@ async def get_challans(current_user: User = Depends(get_current_user)):
     else:
         raise HTTPException(status_code=403, detail="No permission to view challans")
     
-    # Handle backward compatibility for challans without vehicle_no
+    # Handle backward compatibility and convert datetime to IST format
     processed_challans = []
     for challan in challans:
         if "vehicle_no" not in challan:
             challan["vehicle_no"] = None
-        processed_challans.append(Challan(**challan))
+        
+        # Convert created_at to IST format if it's a datetime object
+        if "created_at" in challan and isinstance(challan["created_at"], datetime):
+            # If it's already timezone-aware, convert to IST
+            if challan["created_at"].tzinfo is not None:
+                ist_time = challan["created_at"].astimezone(IST)
+            else:
+                # If it's naive UTC, make it timezone-aware and convert to IST
+                utc_time = challan["created_at"].replace(tzinfo=timezone.utc)
+                ist_time = utc_time.astimezone(IST)
+            challan["created_at"] = ist_time.isoformat()
+        
+        # Remove MongoDB _id field
+        if "_id" in challan:
+            challan.pop("_id")
+        
+        processed_challans.append(challan)
     
     return processed_challans
 
