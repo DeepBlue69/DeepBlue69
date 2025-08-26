@@ -15,6 +15,8 @@ import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import json
 import re
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -30,6 +32,13 @@ def get_ist_now():
 def get_ist_date():
     """Get current date in IST"""
     return get_ist_now().date()
+
+# Custom JSON encoder that preserves timezone information
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()  # This preserves timezone info like +05:30
+        return super().default(obj)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
