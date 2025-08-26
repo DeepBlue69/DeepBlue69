@@ -309,7 +309,7 @@ class ChallanAPITester:
             
         # Test updating permissions
         new_permissions = ["create_challan", "view_own_challans"]
-        success, response = self.run_test(
+        success, update_response = self.run_test(
             "Update User Permissions",
             "PUT",
             f"users/{test_user['id']}/permissions",
