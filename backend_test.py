@@ -390,6 +390,21 @@ class ChallanAPITester:
                 
         return len(challan_numbers) > 0
 
+    def test_unauthorized_access(self):
+        """Test accessing protected routes without token"""
+        old_token = self.token
+        self.token = None
+        
+        success, response = self.run_test(
+            "Unauthorized Access (should fail)",
+            "GET",
+            "challans",
+            401  # Expecting unauthorized
+        )
+        
+        self.token = old_token
+        return success
+
 def main():
     print("🚀 Starting Delivery Challan Generator API Tests")
     print("=" * 60)
