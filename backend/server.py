@@ -317,7 +317,14 @@ async def get_users(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Only admin can view users")
     
     users = await db.users.find().to_list(1000)
-    return [{k: v for k, v in user.items() if k != "password_hash"} for user in users]
+    # Clean up ObjectId fields for each user
+    clean_users = []
+    for user in users:
+        clean_user = {k: v for k, v in user.items() if k not in ["password_hash", "_id"]}
+        if "_id" in user:
+            clean_user["_id"] = str(user["_id"])
+        clean_users.append(clean_user)
+    return clean_users
 
 # Initialize admin user on startup
 @app.on_event("startup")
