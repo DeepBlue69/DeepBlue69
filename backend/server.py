@@ -13,12 +13,20 @@ from datetime import datetime, timezone, timedelta, date
 import bcrypt
 import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Timezone setup - Indian Standard Time (UTC+5:30)
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# Custom JSON encoder for datetime with timezone
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
