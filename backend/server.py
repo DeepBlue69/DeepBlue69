@@ -106,7 +106,7 @@ class ChallanTotals(BaseModel):
 class Challan(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     challan_number: str
-    vehicle_no: str
+    vehicle_no: Optional[str] = None  # Made optional for backward compatibility
     items: List[ChallanItem]
     totals: ChallanTotals
     created_by: str
