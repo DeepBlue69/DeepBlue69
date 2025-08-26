@@ -47,12 +47,12 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    if (user) {
+    if (user && user.permissions) {
       fetchChallans();
-      if (user.permissions?.includes('manage_users')) {
+      if (user.permissions.includes('manage_users')) {
         fetchUsers();
       }
-      if (user.permissions?.includes('manage_permissions')) {
+      if (user.permissions.includes('manage_permissions')) {
         fetchAvailablePermissions();
       }
     }
