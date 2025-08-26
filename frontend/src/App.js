@@ -114,6 +114,7 @@ function App() {
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);
+    setUserLoading(false);
     setChallans([]);
     setReports(null);
     setUsers([]);
